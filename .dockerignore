@@ -1,0 +1,10 @@
+data
+node_modules
+.git
+.env
+*.zip
+*.log
+preview-*.png
+github-pages
+VOLT-GitHub-Pages
+test

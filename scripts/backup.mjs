@@ -1,0 +1,11 @@
+import { DatabaseSync } from 'node:sqlite';
+import { existsSync,mkdirSync,cpSync } from 'node:fs';
+import { resolve,dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const file=process.env.DB_PATH||resolve(dirname(fileURLToPath(import.meta.url)),'../data/store.sqlite');
+if(!existsSync(file))throw new Error('No database exists yet. Start the store first.');
+const target=resolve(dirname(file),'backups',new Date().toISOString().replace(/[:.]/g,'-'));
+mkdirSync(target,{recursive:true});const db=new DatabaseSync(file);db.prepare('VACUUM INTO ?').run(resolve(target,'store.sqlite'));db.close();
+const uploads=resolve(dirname(file),'uploads');if(existsSync(uploads))cpSync(uploads,resolve(target,'uploads'),{recursive:true});
+console.log(`Backup created: ${target}`);
+console.log('Keep this folder private. Pause uploads during backups for a consistent image snapshot.');

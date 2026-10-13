@@ -1,0 +1,22 @@
+data/*.sqlite*
+*.log
+node_modules/
+.env
+data/uploads/
+data/server.pid
+
+github-pages/
+VOLT-GitHub-Pages.zip
+
+data/backups/
+VOLT-Full-Stack.zip
+preview-*.png
+
+# Local screenshots and browser QA fixture
+/preview.png
+/live-github-pages.png
+/test/browser-fixture.mjs
+
+/data/
+.env.*
+!.env.example

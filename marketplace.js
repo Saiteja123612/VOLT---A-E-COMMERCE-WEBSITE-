@@ -1,101 +1,255 @@
-let workspaceView='overview', authNext=null, sellerData=null, currentListingPhoto='', reviewProductId=null;
-$('#auth-dialog').addEventListener('close',()=>{authNext=null;});
-const e=escapeHTML;
-const iconImages=['headphones','keyboard','speaker','watch','mouse','charger','earbuds','lamp'];
-const marketCategories=['Audio','Desk setup','Wearables','Accessories','Phones & tablets','Laptops','Computers','Cameras','Gaming'];
-const dateLabel=value=>new Date(value).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
-const statusClass=status=>({Confirmed:'blue',Processing:'orange',Shipped:'purple',Delivered:'green',Cancelled:'muted'}[status]||'blue');
-const statusPill=status=>`<span class="status-pill ${statusClass(status)}">${e(status)}</span>`;
-function notify(message){toast(message);const open=$('dialog[open]');if(open){let notice=$('.dialog-notice',open);if(!notice){notice=document.createElement('div');notice.className='dialog-notice';notice.setAttribute('role','status');open.append(notice);}notice.textContent=message;setTimeout(()=>notice.remove(),3500);}}
-function resetAccountUI(){
- $('#account-greeting').textContent=accountUser?`Hello, ${accountUser.name.split(' ')[0]}`:'Hello, sign in';
- $('#member-name').textContent=accountUser?.name||'My account';$('#member-avatar').textContent=accountUser?.name.slice(0,1).toUpperCase()||'V';
- $('.delivery-button strong').textContent=accountUser?.address?.city||'India';
- $('.delivery-button small').textContent=accountUser?.address?.pincode?`Deliver to ${accountUser.address.pincode}`:'Delivering across';
-}
-function acceptSession(result,mergeGuest=false){accountUser=result.user;csrfToken=result.csrf||csrfToken;if(accountUser){favorites=new Set(mergeGuest?[...favorites,...accountUser.wishlist]:accountUser.wishlist);persist('volt-favorites',[...favorites]);if(mergeGuest)syncFavorites();}resetAccountUI();if(products.length)renderProducts();}
-async function syncFavorites(){if(!accountUser)return;try{await api('/api/account/wishlist',{ids:[...favorites]});accountUser.wishlist=[...favorites];if(workspaceView==='saved'&&!$('#workspace').hidden)renderSaved();}catch(err){notify(err.message);}}
-async function refreshProducts(){products=(await api('/api/products')).products;cart=cart.filter(i=>products.some(p=>p.id===i.id));saveBag();renderProducts();}
-function shop(categoryValue){$('#workspace').hidden=true;$('#storefront').hidden=false;document.body.classList.remove('in-workspace');if(categoryValue){onlyFavorites=false;$('#search').value='';setCategory(categoryValue);$('#shop').scrollIntoView();}else window.scrollTo({top:0,behavior:'smooth'});}
-function requireAccount(action){if(!accountUser){showAuth('login',action);return false;}return true;}
-function showAuth(mode='login',next=null){
- if(isStaticPreview)return showPreviewMessage('Account access');
- if(next)authNext=next;
- const register=mode==='register',recover=mode==='recover';
- $('#auth-content').innerHTML=`<span class="eyebrow">${recover?'A FRESH START':register?'JOIN THE GOOD COMPANY':'WELCOME BACK'}</span><h2 id="auth-title">${recover?'Find your way back.':register?'Your world, upgraded.':'Good to see you.'}</h2><p class="auth-subtitle">${recover?'Use the private recovery key saved when you joined.':register?'One free account to shop, save, and sell.':'Sign in to your little corner of VOLT.'}</p><form id="auth-form" class="stack-form">${register?'<label class="field">Your name<input name="name" autocomplete="name" required minlength="2" maxlength="100" placeholder="What should we call you?"></label>':''}<label class="field">Email address<input name="email" type="email" autocomplete="username" required maxlength="150" placeholder="you@example.com"></label>${recover?'<label class="field">Private recovery key<input name="recoveryCode" autocomplete="off" required maxlength="100" placeholder="The key you saved at signup"></label>':''}<label class="field">${recover?'New password':'Password'}<span class="password-field"><input name="password" type="password" autocomplete="${register||recover?'new-password':'current-password'}" required minlength="10" maxlength="128" placeholder="${register||recover?'At least 10 characters':'Your password'}"><button type="button" id="toggle-password" aria-label="Show password">Show</button></span></label>${!register&&!recover?'<button type="button" class="auth-forgot" data-auth="recover">Forgot your password?</button>':''}<p id="auth-error" class="error" role="alert"></p><button class="button blue full-width" type="submit">${register?'Create free account':recover?'Reset password':'Sign in'} <span>↗</span></button></form><div class="auth-divider"><span>${register?'ALREADY PART OF VOLT?':'NEW AROUND HERE?'}</span></div><button class="button outline full-width" data-auth="${register||recover?'login':'register'}">${register||recover?'Back to sign in':'Create your account'} <span>↗</span></button><p class="subtle auth-privacy">Local demo · No subscription or payment required.<br>${recover?'No email is sent. Recovery works with your private key.':'Your password is hashed and stored on this computer.'}</p>`;
- $$('[data-auth]',$('#auth-content')).forEach(b=>b.onclick=()=>showAuth(b.dataset.auth));
- $('#toggle-password').onclick=()=>{const input=$('#auth-form').elements.password;input.type=input.type==='password'?'text':'password';$('#toggle-password').textContent=input.type==='password'?'Show':'Hide';$('#toggle-password').setAttribute('aria-label',`${input.type==='password'?'Show':'Hide'} password`);};
- $('#auth-form').onsubmit=async event=>{
-   event.preventDefault();const form=event.currentTarget;const button=$('button[type=submit]',form);button.disabled=true;$('#auth-error').textContent='';
-   try{const result=await api(`/api/auth/${mode==='register'?'register':recover?'recover':'login'}`,Object.fromEntries(new FormData(form)));
-     if(recover){accountUser=null;csrfToken='';resetAccountUI();showRecoveryKey(result.recoveryCode,()=>showAuth('login'));}
-     else{acceptSession(result,true);if(register)showRecoveryKey(result.recoveryCode,finishAuth);else finishAuth();}
-   }catch(err){$('#auth-error').textContent=err.message;button.disabled=false;}
- };
- openDialog('#auth-dialog');
-}
-function finishAuth(){closeDialog($('#auth-dialog'));const next=authNext;authNext=null;if(next)next();else openWorkspace('overview');}
-function showRecoveryKey(key,next){$('#auth-content').innerHTML=`<span class="eyebrow">KEEP THIS SOMEWHERE SAFE</span><h2 id="auth-title">Your spare key.</h2><p class="auth-subtitle">This private key lets you reset your password without a paid email service. It is shown only once. After recovery, the old key stops working.</p><code class="order-key">${e(key)}</code><button id="save-recovery" class="button outline full-width">Download recovery key <span>↓</span></button><p class="subtle">Keep this file private. Anyone with your email and this key can reset your password.</p><button id="recovery-continue" class="button blue full-width">I’ve saved my key <span>↗</span></button>`;$('#save-recovery').onclick=()=>downloadText('VOLT-recovery-key.txt',`VOLT private recovery key\n${key}\nKeep this private. Do not share this file.`);$('#recovery-continue').onclick=next;}
-function downloadText(filename,text){const url=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-$('#account-button').onclick=()=>accountUser?openWorkspace('overview'):showAuth();
-$('#my-orders').onclick=()=>openWorkspace('orders');$('#sell-button').onclick=()=>openWorkspace('seller');$('#seller-discovery').onclick=()=>openWorkspace('seller');
-$('#delivery-button').onclick=()=>openWorkspace('profile');$('#back-to-shop').onclick=()=>shop();
-$$('[data-workspace]').forEach(b=>b.onclick=()=>openWorkspace(b.dataset.workspace));
-$('#logout-button').onclick=async()=>{try{await api('/api/auth/logout',{});accountUser=null;csrfToken='';favorites=new Set();cart=[];persist('volt-favorites',[]);persist('volt-last-order',{});saveBag();resetAccountUI();renderProducts();shop();notify('You’re signed out. See you soon.');}catch(err){notify(err.message);}};
-$$('.market-nav a').forEach(a=>a.addEventListener('click',()=>{if(!$('#workspace').hidden)shop();}));
-$('#favorites-button').addEventListener('click',()=>{if(!$('#workspace').hidden)shop();});
-$$('[data-discover]').forEach(b=>b.onclick=()=>shop(b.dataset.discover));
-$('#deals-button').onclick=()=>{shop('All');$('#sort').value='deals';renderProducts();};
-const globalSearch=$('#global-search');
-function doSearch(value){shop();$('#search').value=value;globalSearch.value=value;onlyFavorites=false;setCategory('All');$('#search-suggestions').hidden=true;$('#shop').scrollIntoView();}
-$('#global-search-form').onsubmit=event=>{event.preventDefault();doSearch(globalSearch.value);};
-globalSearch.oninput=()=>{const query=globalSearch.value.trim().toLowerCase();const list=query?products.filter(p=>`${p.name} ${p.category} ${p.description}`.toLowerCase().includes(query)).slice(0,5):[];$('#search-suggestions').hidden=!list.length;$('#search-suggestions').innerHTML=list.map(p=>`<button type="button" data-suggestion="${p.id}"><img src="${e(productImage(p))}" alt=""><span><strong>${e(p.name)}</strong><small>${e(p.category)}</small></span><b>${money(p.price)}</b></button>`).join('');$$('[data-suggestion]').forEach(b=>b.onclick=()=>{$('#search-suggestions').hidden=true;globalSearch.value='';showProduct(b.dataset.suggestion);});};
-globalSearch.onkeydown=event=>{if(event.key==='Escape')$('#search-suggestions').hidden=true;};
-document.addEventListener('click',event=>{if(!event.target.closest('.global-search'))$('#search-suggestions').hidden=true;const buy=event.target.closest('[data-buy]');if(buy){const before=cart.find(i=>i.id===buy.dataset.buy)?.quantity||0;addToBag(buy.dataset.buy);if(before===0&&!cart.some(i=>i.id===buy.dataset.buy))return;closeDialog($('#product-dialog'));openDialog('#cart-dialog');renderCart();}});
+import { randomBytes, randomUUID, scrypt, timingSafeEqual, createHash } from 'node:crypto';
+import { promisify } from 'node:util';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { migrateOperations } from './operations.js';
 
-function viewHeading(label,title,description,action=''){return `<div class="workspace-heading"><div><span class="eyebrow">${label}</span><h1>${title}</h1><p>${description}</p></div>${action}</div>`;}
-function emptyState(symbol,title,description,button=''){return `<div class="workspace-empty"><span>${symbol}</span><h2>${title}</h2><p>${description}</p>${button}</div>`;}
-async function openWorkspace(view='overview'){
- if(!requireAccount(()=>openWorkspace(view)))return;
- workspaceView=view;$('#storefront').hidden=true;$('#workspace').hidden=false;document.body.classList.add('in-workspace');
- $$('[data-workspace]').forEach(b=>b.classList.toggle('selected',b.dataset.workspace===view));resetAccountUI();
- $('#workspace-content').innerHTML='<div class="workspace-loading"><span class="loading-pulse"></span>Getting your space ready…</div>';window.scrollTo({top:0});
- try{if(['seller','listings','sales'].includes(view)){if(!accountUser.seller){renderSellerOnboarding();return;}sellerData=await api('/api/seller/dashboard');if(workspaceView!==view)return;if(view==='seller')renderSeller();if(view==='listings')renderListings();if(view==='sales')renderSales();}
- else if(view==='overview'||view==='orders'){const {orders}=await api('/api/account/orders');if(workspaceView!==view)return;view==='overview'?renderOverview(orders):renderOrders(orders);}
- else if(view==='profile')renderProfile();else if(view==='security')renderSecurity();else if(view==='saved')renderSaved();
- }catch(err){$('#workspace-content').innerHTML=emptyState('↻','A little interruption.',e(err.message),'<button class="button blue" id="retry-workspace">Try again ↗</button>');$('#retry-workspace').onclick=()=>openWorkspace(view);}
+const deriveKey = promisify(scrypt);
+const digest = value => createHash('sha256').update(value).digest('hex');
+const error = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
+const categories = ['Audio', 'Desk setup', 'Wearables', 'Accessories', 'Phones & tablets', 'Laptops', 'Computers', 'Cameras', 'Gaming'];
+const illustrations = ['headphones', 'keyboard', 'speaker', 'watch', 'mouse', 'charger', 'earbuds', 'lamp'];
+const text = (value, label, min, max) => {
+  if (typeof value !== 'string' || value.trim().length < min || value.trim().length > max) error(`${label} must be ${min}–${max} characters.`);
+  return value.trim();
+};
+const validPassword = value => { if (typeof value !== 'string' || value.length < 10 || value.length > 128) error('Use a password with 10–128 characters.'); return value; };
+async function passwordHash(password) { const salt = randomBytes(16).toString('hex'); return `${salt}:${(await deriveKey(password, salt, 64)).toString('hex')}`; }
+async function verify(password, saved) {
+  const [salt, key] = saved.split(':');
+  return timingSafeEqual(Buffer.from(key, 'hex'), await deriveKey(password, salt, 64));
 }
-function renderOverview(orders){
- const active=orders.filter(o=>!['Cancelled','Delivered'].includes(o.status)).length;
- $('#workspace-content').innerHTML=viewHeading('YOUR EVERYDAY, ORGANIZED',`Hello, ${e(accountUser.name.split(' ')[0])}<span class="wave">✳</span>`,`Your favorites, your orders, your next good thing.`)+`<div class="welcome-card"><div><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2>A world of good things.<br>One place for you.</h2><button id="overview-shop" class="button dark">Discover something new <span>↗</span></button></div><img src="./images/headphones.svg" alt="Sound One headphones"><span class="welcome-star">✳</span></div><div class="stat-grid"><button class="stat-card" data-go="orders"><span>↗</span><small>Orders placed</small><strong>${orders.length.toString().padStart(2,'0')}</strong><p>${active} in progress</p></button><button class="stat-card" data-go="saved"><span>♡</span><small>Saved for later</small><strong>${favorites.size.toString().padStart(2,'0')}</strong><p>Your personal shortlist</p></button><button class="stat-card" data-go="profile"><span>⌖</span><small>Your delivery address</small><strong class="stat-text">${e(accountUser.address?.city||'Add address')}</strong><p>${e(accountUser.address?.pincode||'Make checkout a little quicker')}</p></button></div><div class="panel-heading"><h2>Your latest orders</h2><button data-go="orders">View all ↗</button></div>${orders.length?orders.slice(0,2).map(orderCard).join(''):emptyState('▤','Your first favorite is waiting.','When you place an order while signed in, it will appear here.')}<div class="seller-invitation"><span>↗</span><div><h3>Have something worth sharing?</h3><p>Turn your products into your own storefront. No listing fees in this local demo.</p></div><button class="button outline" data-go="seller">Explore selling ↗</button></div>`;
- $('#overview-shop').onclick=()=>shop('All');bindWorkspaceActions(orders);
+const publicUser = row => ({ id: row.id, name: row.name, email: row.email, seller: Boolean(row.seller), storeName: row.store_name, address: JSON.parse(row.address), wishlist: JSON.parse(row.wishlist), createdAt: row.created_at, role: row.role, status: row.status });
+
+export function marketplace(db, { body, customer, uploadDir, secureCookies=false }) {
+  db.exec(`CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password TEXT NOT NULL,
+    recovery_hash TEXT NOT NULL, seller INTEGER NOT NULL DEFAULT 0, store_name TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '{}', wishlist TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS product_owners (product_id TEXT PRIMARY KEY REFERENCES products(id), user_id TEXT NOT NULL REFERENCES users(id), active INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS order_owners (order_id TEXT PRIMARY KEY REFERENCES orders(id), user_id TEXT NOT NULL REFERENCES users(id));
+    CREATE TABLE IF NOT EXISTS uploads (path TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id));
+    CREATE TABLE IF NOT EXISTS reviews (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), user_id TEXT NOT NULL REFERENCES users(id), rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5), comment TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(product_id,user_id));`);
+  migrateOperations(db);
+  mkdirSync(uploadDir, { recursive: true });
+  const attempts = new Map();
+  const slowAuth = req => {
+    const key = req.socket.remoteAddress; const now = Date.now(); const entry = attempts.get(key) || { count: 0, time: now };
+    if (now - entry.time > 600000) { entry.count = 0; entry.time = now; }
+    if (++entry.count > 25) error('Too many account attempts. Please try again in 10 minutes.', 429);
+    attempts.set(key, entry);
+  };
+  const userById = id => db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  function identify(req) {
+    const token = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith('volt_session='))?.slice(13);
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+    const session = db.prepare('SELECT * FROM sessions WHERE token_hash=? AND expires_at>?').get(digest(token), Date.now());
+    if (!session) return null;
+    const user=userById(session.user_id);
+    if(!user||user.status!=='active')return null;
+    return { ...session, user };
+  }
+  function requireSession(req, seller = false) {
+    const session = identify(req);
+    if (!session) error('Please sign in to continue.', 401);
+    if (req.method !== 'GET' && req.headers['x-csrf-token'] !== session.csrf) error('Your session changed. Refresh the page and try again.', 403);
+    if (seller && !session.user.seller) error('Create your seller profile first.', 403);
+    return session;
+  }
+  function createSession(res, user) {
+    const token = randomBytes(32).toString('hex'); const csrf = randomBytes(24).toString('hex');
+    db.prepare('DELETE FROM sessions WHERE expires_at<?').run(Date.now());
+    db.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run(digest(token), user.id, csrf, Date.now() + 7 * 86400000);
+    res.setHeader('Set-Cookie', `volt_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800${secureCookies?'; Secure':''}`);
+    return { user: publicUser(user), csrf };
+  }
+  const clearCookie = res => res.setHeader('Set-Cookie', `volt_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookies?'; Secure':''}`);
+  function enrichProducts(rows) {
+    return rows.filter(p => db.prepare('SELECT active FROM product_owners WHERE product_id=?').get(p.id)?.active !== 0 && !db.prepare('SELECT hidden FROM product_controls WHERE product_id=?').get(p.id)?.hidden && !db.prepare("SELECT 1 FROM product_owners o JOIN users u ON u.id=o.user_id WHERE o.product_id=? AND u.status='suspended'").get(p.id)).map(p => {
+      const owner = db.prepare('SELECT u.id,u.store_name FROM product_owners o JOIN users u ON o.user_id=u.id WHERE product_id=?').get(p.id);
+      const reviews = db.prepare('SELECT count(*) count, avg(rating) rating FROM reviews WHERE product_id=?').get(p.id);
+      return { ...p, sellerId: owner?.id || null, sellerName: owner?.store_name || (p.demoListing ? 'VOLT demo catalog' : 'VOLT Studio'), rating: reviews.rating || 0, reviewCount: reviews.count };
+    });
+  }
+  function saveOrder(order) { db.prepare('UPDATE orders SET payload=? WHERE id=?').run(JSON.stringify(order), order.id); }
+  function stateOf(order) {
+    if (order.status === 'Cancelled') return 'Cancelled';
+    const statuses = order.items.map(i => i.status || 'Confirmed');
+    if (statuses.every(s => s === 'Delivered')) return 'Delivered';
+    if (statuses.some(s => s === 'Shipped' || s === 'Delivered')) return 'Shipped';
+    if (statuses.some(s => s === 'Processing')) return 'Processing';
+    return 'Confirmed';
+  }
+  function ownedOrder(id, userId) {
+    const row = db.prepare('SELECT o.payload FROM orders o JOIN order_owners u ON o.id=u.order_id WHERE o.id=? AND u.user_id=?').get(id, userId);
+    if (!row) error('Order not found.', 404);
+    return JSON.parse(row.payload);
+  }
+  function ownProduct(id, userId) {
+    const row = db.prepare('SELECT p.*,o.active FROM products p JOIN product_owners o ON p.id=o.product_id WHERE p.id=? AND o.user_id=?').get(id, userId);
+    if (!row) error('Listing not found.', 404);
+    return { ...JSON.parse(row.payload), stock: row.stock, price: row.price, active: Boolean(row.active) };
+  }
+  function listing(input, userId, id, allowedPhoto='') {
+    const name = text(input.name, 'Product name', 3, 90);
+    if (!categories.includes(input.category)) error('Choose a valid category.');
+    if (!Number.isSafeInteger(input.price) || input.price < 100 || input.price > 100000000) error('Price must be ₹1–₹10,00,000.');
+    if (!Number.isSafeInteger(input.originalPrice) || input.originalPrice < input.price || input.originalPrice > 100000000) error('Reference price must be at least the selling price.');
+    if (!Number.isInteger(input.stock) || input.stock < 0 || input.stock > 100000) error('Stock must be a whole number from 0–100,000.');
+    if (!illustrations.includes(input.image)) error('Choose a product illustration.');
+    const description = text(input.description, 'Description', 20, 3000);
+    const tagline = text(input.tagline, 'Short description', 3, 100);
+    if (!Array.isArray(input.specs) || input.specs.length < 1 || input.specs.length > 8) error('Add 1–8 product specifications.');
+    const specs = input.specs.map(s => text(s, 'Specification', 2, 150));
+    let photo = '';
+    if (input.photo) {
+      if (input.photo!==allowedPhoto && !db.prepare('SELECT path FROM uploads WHERE path=? AND user_id=?').get(input.photo, userId)) error('Upload a photo from your own account.');
+      photo = input.photo;
+    }
+    return { id, name, category: input.category, price: input.price, originalPrice: input.originalPrice, stock: input.stock, image: input.image, photo, tagline, description, specs, badge: 'Independent seller', condition: ['New', 'Like new', 'Used'].includes(input.condition) ? input.condition : 'New' };
+  }
+
+  async function handle(req, res, url, json) {
+    const path = url.pathname;
+    const match = path.match(/^\/api\/products\/([a-z0-9-]+)\/reviews$/);
+    if (match && req.method === 'GET') {
+      const reviews = db.prepare('SELECT r.rating,r.comment,r.created_at,u.name FROM reviews r JOIN users u ON u.id=r.user_id WHERE product_id=? ORDER BY r.created_at DESC').all(match[1]);
+      json(200, { reviews: reviews.map(r => ({ ...r, name: r.name.split(' ')[0], verified: true })) }); return true;
+    }
+    if (!/^\/api\/(auth|account|seller|reviews)(\/|$)/.test(path)) return false;
+    if (path === '/api/auth/me' && req.method === 'GET') {
+      const s = identify(req); json(200, s ? { user: publicUser(s.user), csrf: s.csrf } : { user: null, csrf: null }); return true;
+    }
+    if (req.method === 'POST' && ['/api/auth/register', '/api/auth/login', '/api/auth/recover'].includes(path)) {
+      slowAuth(req); const input = await body(req); const email = text(input.email, 'Email', 5, 150).toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) error('Enter a valid email address.');
+      const password = validPassword(input.password);
+      if (path.endsWith('/register')) {
+        const name = text(input.name, 'Name', 2, 100);
+        if (db.prepare('SELECT id FROM users WHERE email=?').get(email)) error('An account already uses that email. Sign in instead.', 409);
+        const id = randomUUID(); const recoveryCode = randomBytes(20).toString('hex'); const encrypted = await passwordHash(password);
+        try { db.prepare('INSERT INTO users(id,email,name,password,recovery_hash,created_at) VALUES(?,?,?,?,?,?)').run(id, email, name, encrypted, digest(recoveryCode), new Date().toISOString()); }
+        catch (e) { if (e.message.includes('UNIQUE')) error('An account already uses that email.', 409); throw e; }
+        json(201, { ...createSession(res, userById(id)), recoveryCode }); return true;
+      }
+      const user = db.prepare('SELECT * FROM users WHERE email=?').get(email);
+      if (path.endsWith('/recover')) {
+        if (!user || typeof input.recoveryCode !== 'string' || !timingSafeEqual(Buffer.from(user.recovery_hash), Buffer.from(digest(input.recoveryCode.trim())))) error('Email or recovery key is incorrect.', 401);
+        const encrypted = await passwordHash(password); const recoveryCode = randomBytes(20).toString('hex');
+        const changed = db.prepare('UPDATE users SET password=?,recovery_hash=? WHERE id=? AND recovery_hash=?').run(encrypted, digest(recoveryCode), user.id, user.recovery_hash);
+        if (!changed.changes) error('This recovery key has already been used.', 409);
+        db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id); clearCookie(res);
+        json(200, { recovered: true, recoveryCode }); return true;
+      }
+      // Run a password derivation even for a missing account to reduce timing differences.
+      const fallback = `${'0'.repeat(32)}:${'0'.repeat(128)}`;
+      if (!await verify(password, user?.password || fallback) || !user) error('Email or password is incorrect.', 401);
+      if(user.status!=='active')error('This account is suspended. Contact the store administrator.',403);
+      json(200, createSession(res, user)); return true;
+    }
+    const s = requireSession(req, path.startsWith('/api/seller/') && !['/api/seller/enroll','/api/seller/image'].includes(path));
+    if(path==='/api/seller/image'&&!s.user.seller&&s.user.role!=='admin')error('Create your seller profile first.',403);
+    const user = s.user;
+    if (path === '/api/auth/logout' && req.method === 'POST') {
+      db.prepare('DELETE FROM sessions WHERE token_hash=?').run(s.token_hash); clearCookie(res); json(200, { ok: true }); return true;
+    }
+    if (path === '/api/account/profile' && req.method === 'POST') {
+      const input = await body(req); const name = text(input.name, 'Name', 2, 100);
+      const address = input.address ? customer({ ...input.address, name, email: user.email }) : JSON.parse(user.address);
+      db.prepare('UPDATE users SET name=?,address=? WHERE id=?').run(name, JSON.stringify(address), user.id);
+      json(200, { user: publicUser(userById(user.id)) }); return true;
+    }
+    if (path === '/api/account/password' && req.method === 'POST') {
+      slowAuth(req); const input = await body(req); validPassword(input.password);
+      if (typeof input.currentPassword !== 'string' || input.currentPassword.length > 128 || !await verify(input.currentPassword, user.password)) error('Current password is incorrect.', 401);
+      const encrypted = await passwordHash(input.password);
+      db.prepare('UPDATE users SET password=? WHERE id=?').run(encrypted, user.id);
+      db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id);
+      json(200, createSession(res, userById(user.id))); return true;
+    }
+    if (path === '/api/account/wishlist' && req.method === 'POST') {
+      const input = await body(req);
+      if (!Array.isArray(input.ids) || input.ids.length > 200 || !input.ids.every(id => typeof id === 'string' && db.prepare('SELECT id FROM products WHERE id=?').get(id))) error('Invalid wishlist.');
+      const ids = [...new Set(input.ids)]; db.prepare('UPDATE users SET wishlist=? WHERE id=?').run(JSON.stringify(ids), user.id);
+      json(200, { ids }); return true;
+    }
+    if (path === '/api/account/orders' && req.method === 'GET') {
+      const orders = db.prepare('SELECT o.payload FROM orders o JOIN order_owners u ON o.id=u.order_id WHERE u.user_id=? ORDER BY o.created_at DESC').all(user.id).map(r => JSON.parse(r.payload));
+      json(200, { orders }); return true;
+    }
+    if (path === '/api/account/cancel' && req.method === 'POST') {
+      const input = await body(req); const order = ownedOrder(String(input.id), user.id);
+      if (order.status === 'Cancelled') { json(200, { order }); return true; }
+      if (order.items.some(i => ['Shipped', 'Delivered'].includes(i.status))) error('This order has shipped and can no longer be cancelled.', 409);
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const item of order.items) db.prepare('UPDATE products SET stock=stock+? WHERE id=?').run(item.quantity, item.id);
+        order.status = 'Cancelled'; order.items.forEach(i => { i.status = 'Cancelled'; }); order.cancelledAt = new Date().toISOString(); saveOrder(order); db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      json(200, { order }); return true;
+    }
+    if (path === '/api/seller/enroll' && req.method === 'POST') {
+      const input = await body(req); const storeName = text(input.storeName, 'Store name', 3, 70);
+      db.prepare('UPDATE users SET seller=1,store_name=? WHERE id=?').run(storeName, user.id);
+      json(200, { user: publicUser(userById(user.id)) }); return true;
+    }
+    if (path === '/api/seller/image' && req.method === 'POST') {
+      const input = await body(req, 3000000); const match = typeof input.image === 'string' && input.image.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) error('Upload a PNG, JPEG or WebP image.');
+      const buffer = Buffer.from(match[2], 'base64');
+      if (buffer.length > 2 * 1024 * 1024 || buffer.length < 16) error('Image must be under 2 MB.');
+      const valid = match[1] === 'png' ? buffer.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) : match[1] === 'jpeg' ? buffer[0] === 255 && buffer[1] === 216 && buffer[2] === 255 : buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
+      if (!valid) error('That file is not a valid image.');
+      const filename = `${randomUUID()}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`; const path = `/uploads/${filename}`;
+      writeFileSync(resolve(uploadDir, filename), buffer, { flag: 'wx' }); db.prepare('INSERT INTO uploads VALUES(?,?)').run(path, user.id);
+      json(201, { path }); return true;
+    }
+    if (path === '/api/seller/dashboard' && req.method === 'GET') {
+      const listings = db.prepare('SELECT p.*,o.active FROM products p JOIN product_owners o ON o.product_id=p.id WHERE o.user_id=?').all(user.id).map(r => ({ ...JSON.parse(r.payload), stock: r.stock, price: r.price, active: Boolean(r.active) }));
+      const orders = db.prepare('SELECT payload FROM orders ORDER BY created_at DESC').all().map(r => JSON.parse(r.payload)).map(o => {
+        const items = o.items.filter(i => i.sellerId === user.id);
+        return items.length ? { id: o.id, createdAt: o.createdAt, customer: { name: o.customer.name, phone: o.customer.phone, address: o.customer.address, city: o.customer.city, state: o.customer.state, pincode: o.customer.pincode }, status: o.status, items, merchandiseTotal: items.reduce((sum, i) => sum + i.lineTotal, 0) } : null;
+      }).filter(Boolean);
+      json(200, { listings, orders }); return true;
+    }
+    if (path === '/api/seller/products' && req.method === 'POST') {
+      const input = await body(req); const id = input.id || `product-${randomUUID()}`;
+      if (input.id) ownProduct(id, user.id);
+      const product = listing(input, user.id, id);
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.prepare('INSERT INTO products VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,price=excluded.price,stock=excluded.stock').run(id, JSON.stringify(product), product.price, product.stock);
+        db.prepare('INSERT OR IGNORE INTO product_owners VALUES(?,?,1)').run(id, user.id); db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
+      json(input.id ? 200 : 201, { product }); return true;
+    }
+    if (path === '/api/seller/visibility' && req.method === 'POST') {
+      const input = await body(req); ownProduct(String(input.id), user.id);
+      if (typeof input.active !== 'boolean') error('Invalid visibility.');
+      db.prepare('UPDATE product_owners SET active=? WHERE product_id=?').run(input.active ? 1 : 0, input.id);
+      json(200, { ok: true }); return true;
+    }
+    if (path === '/api/seller/fulfillment' && req.method === 'POST') {
+      const input = await body(req); const row = db.prepare('SELECT payload FROM orders WHERE id=?').get(String(input.orderId));
+      if (!row) error('Order not found.', 404);
+      const order = JSON.parse(row.payload); const item = order.items.find(i => i.id === input.productId && i.sellerId === user.id);
+      if (!item) error('Order item not found.', 404);
+      const next = { Confirmed: 'Processing', Processing: 'Shipped', Shipped: 'Delivered' };
+      if (order.status === 'Cancelled' || next[item.status || 'Confirmed'] !== input.status) error('That status change is not allowed.', 409);
+      item.status = input.status; item.updatedAt = new Date().toISOString(); order.status = stateOf(order); saveOrder(order);
+      json(200, { ok: true }); return true;
+    }
+    if (path === '/api/reviews' && req.method === 'POST') {
+      const input = await body(req);
+      if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) error('Choose a rating from 1 to 5.');
+      const comment = text(input.comment, 'Review', 10, 1500);
+      const orders = db.prepare('SELECT o.payload FROM orders o JOIN order_owners u ON o.id=u.order_id WHERE u.user_id=?').all(user.id).map(r => JSON.parse(r.payload));
+      if (!orders.some(o => o.items.some(i => i.id === input.productId && i.status === 'Delivered' && i.sellerId !== user.id))) error('You can review products after your purchase is marked delivered.', 403);
+      db.prepare('INSERT INTO reviews VALUES(?,?,?,?,?,?) ON CONFLICT(product_id,user_id) DO UPDATE SET rating=excluded.rating,comment=excluded.comment,created_at=excluded.created_at').run(randomUUID(), input.productId, user.id, input.rating, comment, new Date().toISOString());
+      json(200, { ok: true }); return true;
+    }
+    json(404, { error: 'Endpoint not found.' }); return true;
+  }
+  return { handle, identify, requireSession, enrichProducts, validateListing:listing, stateOf };
 }
-function orderCard(order){return `<article class="order-card"><div class="order-card-top"><div><small>ORDER PLACED</small><strong>${dateLabel(order.createdAt)}</strong></div><div><small>TOTAL</small><strong>${money(order.total)}</strong></div><div><small>ORDER ID</small><strong>${e(order.id)}</strong></div>${statusPill(order.status)}</div><div class="order-card-body"><div class="order-thumbnails">${order.items.slice(0,3).map(i=>`<img src="${e(productImage(i))}" alt="${e(i.name)}">`).join('')}</div><div class="order-card-description"><h3>${e(order.items.map(i=>i.name).join(', '))}</h3><p>${order.items.reduce((n,i)=>n+i.quantity,0)} item(s) · Cash on delivery</p><span>${order.status==='Cancelled'?'Cancelled. Stock returned to the store.':order.status==='Delivered'?'Marked delivered by your seller.':'Your seller will update the status here.'}</span></div><button class="button outline" data-order="${order.id}">View order ↗</button></div></article>`;}
-function bindWorkspaceActions(orders=[]){$$('[data-go]').forEach(b=>b.onclick=()=>openWorkspace(b.dataset.go));$$('[data-order]').forEach(b=>b.onclick=()=>showAccountOrder(orders.find(o=>o.id===b.dataset.order)));}
-function renderOrders(orders){$('#workspace-content').innerHTML=viewHeading('ALL YOUR GOOD CHOICES','Your orders.','Track progress, see details, and revisit your favorites.')+`<div class="workspace-tabs" role="group" aria-label="Filter orders"><button class="active" data-order-filter="all">All orders <b>${orders.length}</b></button><button data-order-filter="active">In progress</button><button data-order-filter="delivered">Delivered</button><button data-order-filter="cancelled">Cancelled</button></div><div id="order-list"></div>`;
- const render=filter=>{let list=orders.filter(o=>filter==='all'||(filter==='active'&&!['Delivered','Cancelled'].includes(o.status))||o.status.toLowerCase()===filter);$('#order-list').innerHTML=list.length?list.map(orderCard).join(''):emptyState('▤','Nothing here just yet.','Your orders will appear here as you shop.');bindWorkspaceActions(orders);};render('all');$$('[data-order-filter]').forEach(b=>b.onclick=()=>{$$('[data-order-filter]').forEach(x=>x.classList.toggle('active',x===b));render(b.dataset.orderFilter);});}
-function showAccountOrder(order){if(!order)return;const steps=['Confirmed','Processing','Shipped','Delivered'];const index=steps.indexOf(order.status);$('#checkout-content').innerHTML=`<div class="account-order-detail"><div class="order-detail-heading"><div><span class="eyebrow">${dateLabel(order.createdAt)}</span><h2>${e(order.id)}</h2></div>${statusPill(order.status)}</div>${order.status!=='Cancelled'?`<div class="order-timeline">${steps.map((s,i)=>`<div class="${i<=index?'done':''}"><span>${i<=index?'✓':i+1}</span><small>${s}</small></div>`).join('')}</div>`:''}<p class="subtle">Statuses are updated manually by sellers in this local demo; no carrier is connected.</p>${order.items.map(i=>`<div class="order-detail-item"><img src="${e(productImage(i))}" alt="${e(i.name)}"><div><h3>${e(i.name)}</h3><p>${e(i.sellerName||'VOLT Studio')} · Qty ${i.quantity}</p>${statusPill(i.status||order.status)}</div><strong>${money(i.lineTotal)}</strong>${i.status==='Delivered'&&i.sellerId!==accountUser.id?`<button class="review-link" data-review="${i.id}">Write a review</button>`:''}</div>`).join('')}<div class="checkout-layout"><div class="delivery-summary"><h3>Deliver to</h3><strong>${e(order.customer.name)}</strong><p>${e(order.customer.address)}<br>${e(order.customer.city)}, ${e(order.customer.state)} ${e(order.customer.pincode)}<br>${e(order.customer.phone)}</p><span class="subtle">Cash on delivery · No online payment collected.</span></div><div>${totalsHTML(order)}</div></div><div class="action-row"><button id="account-receipt" class="button outline">Download receipt ↓</button>${!['Cancelled','Shipped','Delivered'].includes(order.status)?'<button id="cancel-order" class="button danger">Cancel order</button>':''}<button id="buy-again" class="button blue">Buy again ↗</button></div></div>`;
- $('#account-receipt').onclick=()=>downloadText(`${order.id}-receipt.txt`,`VOLT LOCAL DEMO RECEIPT\n${order.id}\n${order.createdAt}\nStatus: ${order.status}\n\n${order.items.map(i=>`${i.name} x ${i.quantity}: ${money(i.lineTotal)}`).join('\n')}\nSubtotal: ${money(order.subtotal)}\nDiscount: ${money(order.discount)}\nDelivery: ${money(order.shipping)}\nTotal: ${money(order.total)}\nCash on delivery. No online payment collected.`);
- $('#cancel-order')?.addEventListener('click',()=>confirmAction('Cancel this order?','This cancels the whole order and restores the items to stock. Orders that have shipped cannot be cancelled.','Cancel order',async()=>{await api('/api/account/cancel',{id:order.id});closeDialog($('#checkout-dialog'));await refreshProducts();await openWorkspace('orders');notify('Order cancelled.');}));
- $('#buy-again').onclick=()=>{let added=0;for(const i of order.items){const p=products.find(p=>p.id===i.id);if(p&&p.stock>0&&p.sellerId!==accountUser.id){const existing=cart.find(x=>x.id===i.id);const quantity=Math.min(i.quantity,p.stock-(existing?.quantity||0),10-(existing?.quantity||0));if(quantity>0){if(existing)existing.quantity+=quantity;else cart.push({id:i.id,quantity});added+=quantity;}}}saveBag();if(!added){notify('These items are currently unavailable.');return;}closeDialog($('#checkout-dialog'));openDialog('#cart-dialog');renderCart();};
- $$('[data-review]').forEach(b=>b.onclick=()=>{closeDialog($('#checkout-dialog'));showReviewForm(b.dataset.review);});openDialog('#checkout-dialog');}
-function confirmAction(title,description,label,action){$('#action-title').textContent=title;$('#action-description').textContent=description;$('#action-confirm').textContent=label;$('#action-error').textContent='';$('#action-confirm').disabled=false;$('#action-back').onclick=()=>closeDialog($('#action-dialog'));$('#action-confirm').onclick=async()=>{$('#action-confirm').disabled=true;try{await action();closeDialog($('#action-dialog'));}catch(err){$('#action-error').textContent=err.message;$('#action-confirm').disabled=false;}};openDialog('#action-dialog');}
-function renderSaved(){const list=products.filter(p=>favorites.has(p.id));$('#workspace-content').innerHTML=viewHeading('A LITTLE SHORTLIST','Saved for a good day.',`${list.length} things you had your eye on.`)+(list.length?`<div class="saved-grid">${list.map(p=>`<article class="saved-card"><button class="saved-card-image bg-${p.image}" data-detail="${p.id}"><img src="${e(productImage(p))}" alt="${e(p.name)}"></button><div><small>${e(p.category)}</small><h3>${e(p.name)}</h3><strong>${money(p.price)}</strong><div class="action-row"><button class="button blue" data-add="${p.id}">Add to bag +</button><button class="remove-item" data-save="${p.id}">Remove</button></div></div></article>`).join('')}</div>`:emptyState('♡','Save a little inspiration.','Tap the heart on any product to keep it here.','<button class="button blue" id="saved-shop">Explore the collection ↗</button>'));$('#saved-shop')?.addEventListener('click',()=>shop('All'));}
-function renderProfile(){const a=accountUser.address||{};$('#workspace-content').innerHTML=viewHeading('THE EVERYDAY DETAILS','Profile & delivery.','Make your next checkout feel effortless.')+`<div class="settings-grid"><form id="profile-form" class="settings-card stack-form"><h2>Your details</h2><div class="form-grid"><label class="field">Full name<input name="name" required minlength="2" maxlength="100" value="${e(accountUser.name)}" autocomplete="name"></label><label class="field">Email address<input value="${e(accountUser.email)}" disabled></label><label class="field">Mobile number<input name="phone" type="tel" required pattern="[6-9][0-9]{9}" maxlength="10" autocomplete="tel-national" value="${e(a.phone||'')}"></label><label class="field">PIN code<input name="pincode" inputmode="numeric" required pattern="[1-9][0-9]{5}" maxlength="6" autocomplete="postal-code" value="${e(a.pincode||'')}"></label><label class="field span-two">Street address<input name="address" required minlength="8" maxlength="250" autocomplete="street-address" value="${e(a.address||'')}"></label><label class="field">City<input name="city" required maxlength="100" autocomplete="address-level2" value="${e(a.city||'')}"></label><label class="field">State / Union territory<input name="state" required maxlength="100" autocomplete="address-level1" value="${e(a.state||'')}"></label></div><p class="error" id="profile-error" role="alert"></p><button class="button blue" type="submit">Save your details <span>↗</span></button><p class="subtle">Use sample information when testing. Delivery is within India.</p></form><aside class="tip-card"><span>⌖</span><h2>Your usual spot.</h2><p>Your saved address fills in automatically when you check out while signed in. You can change the address for each order.</p><small>Email identifies your account and cannot be edited here.</small></aside></div>`;$('#profile-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const button=$('button[type=submit]',form);button.disabled=true;const input=Object.fromEntries(new FormData(form));try{const result=await api('/api/account/profile',{name:input.name,address:input});accountUser=result.user;resetAccountUI();notify('Your delivery details are saved.');}catch(err){$('#profile-error').textContent=err.message;}finally{button.disabled=false;}};}
-function renderSecurity(){$('#workspace-content').innerHTML=viewHeading('YOUR ACCOUNT, YOURS','Login & security.','A strong password keeps your little world private.')+`<div class="settings-grid"><form class="settings-card stack-form" id="password-form"><h2>Change password</h2><label class="field">Current password<input name="currentPassword" type="password" autocomplete="current-password" required maxlength="128"></label><label class="field">New password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label><label class="field">Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label><p class="error" id="password-error" role="alert"></p><button class="button blue">Update password ↗</button><p class="subtle">Use 10 or more characters. Other sessions will be signed out.</p></form><aside class="tip-card"><span>◇</span><h2>A private space.</h2><p>Passwords are salted and hashed. Your session uses an HTTP-only cookie.</p><p>Keep the recovery key you received at signup somewhere safe. Use it with “Forgot your password?” to regain access without email.</p></aside></div>`;$('#password-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const input=Object.fromEntries(new FormData(form));if(input.password!==input.confirmPassword){$('#password-error').textContent='The new passwords do not match.';return;}const button=$('button',form);button.disabled=true;try{acceptSession(await api('/api/account/password',input));form.reset();notify('Password updated. Other sessions are signed out.');}catch(err){$('#password-error').textContent=err.message;}finally{button.disabled=false;}};}
-
-function renderSellerOnboarding(){$('#workspace-content').innerHTML=viewHeading('MEET YOUR NEXT CHAPTER','Small store. Big possibility.','Turn something you love into something someone else will love, too.')+`<div class="seller-onboarding"><div class="onboard-art"><span class="eyebrow">YOUR OWN CORNER OF THE MARKET</span><h2>You bring<br>the good stuff.<br><em>We bring the shelf.</em></h2><span class="onboard-star">✳</span><div class="onboard-points"><span>01 · Create your store</span><span>02 · List your products</span><span>03 · Manage your orders</span></div></div><form id="seller-enroll" class="stack-form"><span class="eyebrow">LET’S MAKE IT YOURS</span><h2>What’s your store called?</h2><p>This name appears on your listings and customer orders.</p><label class="field">Store name<input name="storeName" required minlength="3" maxlength="70" placeholder="e.g. The Gadget Garage"></label><div class="seller-benefits"><span>✓ One account for buying and selling</span><span>✓ Your photos, prices, and inventory</span><span>✓ No listing fees in this local demo</span></div><p id="enroll-error" class="error" role="alert"></p><button class="button blue">Open seller studio <span>↗</span></button><p class="subtle">Local marketplace demo. No payment processing, payouts, or carrier services are connected.</p></form></div>`;$('#seller-enroll').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const button=$('button',form);button.disabled=true;try{const result=await api('/api/seller/enroll',Object.fromEntries(new FormData(form)));accountUser=result.user;resetAccountUI();openWorkspace('seller');}catch(err){$('#enroll-error').textContent=err.message;button.disabled=false;}};}
-function sellerStats(){const orders=sellerData.orders.filter(o=>o.status!=='Cancelled');return {active:sellerData.listings.filter(p=>p.active).length,stock:sellerData.listings.reduce((n,p)=>n+p.stock,0),orders:orders.length,gross:orders.reduce((n,o)=>n+o.merchandiseTotal,0)};}
-function renderSeller(){const stats=sellerStats();$('#workspace-content').innerHTML=viewHeading('YOUR SELLER STUDIO',`${e(accountUser.storeName)}<span class="title-dot">.</span>`,'Good products deserve a good home. Let’s get yours out there.','<button class="button blue" id="new-listing">+ Add a product</button>')+`<div class="seller-stats"><div class="stat-card"><small>Active listings</small><strong>${stats.active.toString().padStart(2,'0')}</strong><p>Your storefront, growing</p></div><div class="stat-card"><small>Incoming orders</small><strong>${stats.orders.toString().padStart(2,'0')}</strong><p>Excludes cancellations</p></div><div class="stat-card"><small>Stock on hand</small><strong>${stats.stock}</strong><p>Across all your listings</p></div><div class="stat-card revenue"><small>Gross merchandise ordered</small><strong>${money(stats.gross)}</strong><p>Before discounts · Not a payout</p></div></div><div class="studio-banner"><div><span class="eyebrow">A LITTLE DETAIL GOES A LONG WAY</span><h2>Make your next listing<br>someone’s next favorite.</h2><p>Clear photos. Honest descriptions. The right price.</p><button class="button dark" id="studio-add">Create a listing <span>↗</span></button></div><img src="./images/speaker.svg" alt="Pocket Beat speaker"></div><div class="panel-heading"><h2>Your latest listings</h2><button data-go="listings">Manage all ↗</button></div>${sellerData.listings.length?listingTable(sellerData.listings.slice(-4).reverse()):emptyState('↗','Your shelf is ready.','Add your first product and it will appear in the marketplace.')}<p class="subtle">Seller metrics reflect local demo orders. No payments or payouts are processed.</p>`;$('#new-listing').onclick=()=>openListing();$('#studio-add').onclick=()=>openListing();bindListings();bindWorkspaceActions();}
-function listingTable(list){return `<div class="listing-table"><div class="listing-table-head"><span>Product</span><span>Price</span><span>Stock</span><span>Status</span><span>Actions</span></div>${list.map(p=>`<div class="listing-row"><div class="listing-product"><img src="${e(productImage(p))}" alt=""><div><strong>${e(p.name)}</strong><small>${e(p.category)} · ${e(p.condition||'New')}</small></div></div><strong>${money(p.price)}</strong><span class="${p.stock<5?'low-stock':''}">${p.stock} left</span><span class="status-pill ${p.active?'green':'muted'}">${p.active?'Live':'Archived'}</span><div class="listing-actions"><button data-edit="${p.id}">Edit</button><button data-visibility="${p.id}" data-active="${!p.active}">${p.active?'Archive':'Restore'}</button></div></div>`).join('')}</div>`;}
-function bindListings(){$$('[data-edit]').forEach(b=>b.onclick=()=>openListing(sellerData.listings.find(p=>p.id===b.dataset.edit)));$$('[data-visibility]').forEach(b=>b.onclick=()=>{const active=b.dataset.active==='true';confirmAction(active?'Restore this listing?':'Archive this listing?',active?'Your product will become visible in the marketplace again.':'It will be hidden from shoppers. Existing orders and product records stay intact.',active?'Restore listing':'Archive listing',async()=>{await api('/api/seller/visibility',{id:b.dataset.visibility,active});await refreshProducts();await openWorkspace(workspaceView);});});}
-function renderListings(){$('#workspace-content').innerHTML=viewHeading('YOUR COLLECTION','All your good things.','Edit details, adjust inventory, and control what shoppers see.','<button id="new-listing" class="button blue">+ Add a product</button>')+`<div class="workspace-tabs"><button class="active" data-list-filter="all">All listings <b>${sellerData.listings.length}</b></button><button data-list-filter="live">Live</button><button data-list-filter="archived">Archived</button><button data-list-filter="low">Low stock</button></div><div id="listing-list"></div>`;const render=filter=>{const list=sellerData.listings.filter(p=>filter==='all'||filter==='live'&&p.active||filter==='archived'&&!p.active||filter==='low'&&p.stock<5);$('#listing-list').innerHTML=list.length?listingTable(list):emptyState('▦','A little room to grow.','Add a product or change the filter to see your listings.');bindListings();};render('all');$$('[data-list-filter]').forEach(b=>b.onclick=()=>{$$('[data-list-filter]').forEach(x=>x.classList.toggle('active',x===b));render(b.dataset.listFilter);});$('#new-listing').onclick=()=>openListing();}
-function openListing(product=null){currentListingPhoto=product?.photo||'';$('#listing-title').textContent=product?'Make it even better.':'A new good thing.';$('#listing-content').innerHTML=`<form id="listing-form"><div class="listing-editor-grid"><div class="photo-editor"><div class="photo-preview" id="photo-preview"><img id="listing-preview" src="${e(product?productImage(product):'./images/headphones.svg')}" alt="Product photo preview"></div><label class="upload-button">↑ Upload your product photo<input id="product-photo" type="file" accept="image/png,image/jpeg,image/webp"></label><small>PNG, JPEG or WebP · Up to 2 MB</small><button type="button" id="remove-photo" class="remove-item">Use illustration instead</button><label class="field">Fallback illustration<select name="image" id="illustration">${iconImages.map(i=>`<option value="${i}" ${i===product?.image?'selected':''}>${i[0].toUpperCase()+i.slice(1)}</option>`).join('')}</select></label><div class="listing-tip"><strong>A photo makes a difference.</strong><p>Use a clear image of your actual product. Keep the background simple and show what the buyer will receive.</p></div></div><div class="stack-form"><div class="form-grid"><label class="field span-two">Product name<input name="name" required minlength="3" maxlength="90" placeholder="e.g. Wireless Studio Headphones" value="${e(product?.name||'')}"></label><label class="field">Category<select name="category">${marketCategories.map(c=>`<option ${c===product?.category?'selected':''}>${c}</option>`).join('')}</select></label><label class="field">Condition<select name="condition">${['New','Like new','Used'].map(c=>`<option ${c===product?.condition?'selected':''}>${c}</option>`).join('')}</select></label><label class="field">Selling price (₹)<input name="price" type="number" min="1" max="1000000" step="0.01" required value="${product?product.price/100:''}" placeholder="2499"></label><label class="field">Reference price / MRP (₹)<input name="originalPrice" type="number" min="1" max="1000000" step="0.01" required value="${product?product.originalPrice/100:''}" placeholder="2999"></label><label class="field">Available stock<input name="stock" type="number" min="0" max="100000" step="1" required value="${product?.stock??1}"></label><label class="field">Short description<input name="tagline" required minlength="3" maxlength="100" placeholder="What makes it special?" value="${e(product?.tagline||'')}"></label><label class="field span-two">Product description<textarea name="description" rows="4" required minlength="20" maxlength="3000" placeholder="Tell shoppers about your product, its condition, and what’s included.">${e(product?.description||'')}</textarea></label><label class="field span-two">Key specifications <small>One per line · Up to 8</small><textarea name="specs" rows="3" required placeholder="Bluetooth 5.3&#10;40-hour battery&#10;USB-C charging">${e(product?.specs.join('\n')||'')}</textarea></label></div><p id="listing-error" class="error" role="alert"></p><button id="publish-listing" class="button blue full-width">${product?'Save changes':'Publish product'} <span>↗</span></button><p class="subtle">${product&&!product.active?'This listing is archived. Saving does not make it live; use Restore in My listings.':'Your listing appears in this local marketplace. No listing fee or subscription.'}</p></div></div></form>`;
- $('#illustration').onchange=()=>{if(!currentListingPhoto)$('#listing-preview').src=`./images/${$('#illustration').value}.svg`;};$('#remove-photo').onclick=()=>{currentListingPhoto='';$('#listing-preview').src=`./images/${$('#illustration').value}.svg`;$('#product-photo').value='';};
- $('#product-photo').onchange=async()=>{const file=$('#product-photo').files[0];if(!file)return;if(file.size>2*1024*1024){$('#listing-error').textContent='Please choose an image under 2 MB.';return;}$('#publish-listing').disabled=true;$('#listing-error').textContent='Uploading your photo…';try{const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});const {path}=await api('/api/seller/image',{image:data});currentListingPhoto=path;$('#listing-preview').src=path;$('#listing-error').textContent='';}catch(err){$('#listing-error').textContent=err.message||'Unable to read that image.';}finally{$('#publish-listing').disabled=false;}};
- $('#listing-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const data=Object.fromEntries(new FormData(form));$('#publish-listing').disabled=true;$('#listing-error').textContent='';try{await api('/api/seller/products',{...data,id:product?.id,price:Math.round(Number(data.price)*100),originalPrice:Math.round(Number(data.originalPrice)*100),stock:Number(data.stock),specs:data.specs.split('\n').map(x=>x.trim()).filter(Boolean),image:$('#illustration').value,photo:currentListingPhoto});closeDialog($('#listing-dialog'));await refreshProducts();await openWorkspace('listings');notify(product?'Listing updated. Looking good.':'Your product is live in the marketplace.');}catch(err){$('#listing-error').textContent=err.message;$('#publish-listing').disabled=false;}};openDialog('#listing-dialog');}
-function renderSales(){const orders=sellerData.orders;$('#workspace-content').innerHTML=viewHeading('GOOD THINGS ON THE MOVE','Incoming orders.','Manage only your items. Updates appear in the buyer’s order history.')+(orders.length?orders.map(o=>`<article class="seller-order"><div class="order-card-top"><div><small>ORDER ID</small><strong>${e(o.id)}</strong></div><div><small>PLACED</small><strong>${dateLabel(o.createdAt)}</strong></div><div><small>YOUR ITEMS, BEFORE DISCOUNTS</small><strong>${money(o.merchandiseTotal)}</strong></div>${statusPill(o.status)}</div><div class="seller-order-body"><div>${o.items.map(i=>`<div class="fulfillment-item"><img src="${e(productImage(i))}" alt=""><div><h3>${e(i.name)}</h3><p>${i.quantity} × ${money(i.price)}</p>${statusPill(i.status||'Confirmed')}</div>${!['Cancelled','Delivered'].includes(i.status)?`<button class="button outline" data-fulfill="${e(o.id)}" data-product="${i.id}" data-next="${{Confirmed:'Processing',Processing:'Shipped',Shipped:'Delivered'}[i.status||'Confirmed']}">${{Confirmed:'Start processing',Processing:'Mark shipped',Shipped:'Mark delivered'}[i.status||'Confirmed']} ↗</button>`:''}</div>`).join('')}</div><div class="seller-shipping"><small>DELIVERY DETAILS</small><strong>${e(o.customer.name)}</strong><p>${e(o.customer.address)}<br>${e(o.customer.city)}, ${e(o.customer.state)} ${e(o.customer.pincode)}<br>${e(o.customer.phone)}</p><span>Cash on delivery · Demo order</span></div></div></article>`).join(''):emptyState('⇄','Your first order is on the horizon.','Publish a product and orders from other shoppers will appear here.'));$$('[data-fulfill]').forEach(b=>b.onclick=()=>confirmAction(`Mark item ${b.dataset.next.toLowerCase()}?`,'This updates the buyer’s order history. In this demo, it does not book a shipment or collect payment.',`Mark ${b.dataset.next.toLowerCase()}`,async()=>{await api('/api/seller/fulfillment',{orderId:b.dataset.fulfill,productId:b.dataset.product,status:b.dataset.next});await openWorkspace('sales');}));}
-async function loadReviews(id){if(isStaticPreview){const box=$("#product-reviews");if(box)box.innerHTML='<p class="subtle">Customer reviews are not connected in this preview.</p>';return;}reviewProductId=id;const box=$('#product-reviews');if(!box)return;box.innerHTML='<p class="subtle">Loading customer reviews…</p>';try{const {reviews}=await api(`/api/products/${id}/reviews`);if(reviewProductId!==id)return;box.innerHTML=`<div class="reviews-heading"><strong>Customer reviews</strong><small>${reviews.length} verified purchase${reviews.length===1?'':'s'}</small></div>${reviews.length?reviews.map(r=>`<div class="customer-review"><span class="review-stars">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span><strong>${e(r.name)} <small>Verified purchase</small></strong><p>${e(r.comment)}</p><small>${dateLabel(r.created_at)}</small></div>`).join(''):'<p class="subtle">No reviews yet. Delivered purchases can be reviewed from My orders.</p>'}`;}catch(err){box.textContent=err.message;}}
-function showReviewForm(id){const p=products.find(p=>p.id===id);$('#info-title').textContent='Share your experience';$('#info-content').innerHTML=`<p>How was ${e(p?.name||'your purchase')}? Your review helps the next shopper.</p><form id="review-form" class="stack-form"><label class="field">Your rating<select name="rating"><option value="5">★★★★★ · Loved it</option><option value="4">★★★★☆ · Really good</option><option value="3">★★★☆☆ · It’s okay</option><option value="2">★★☆☆☆ · Could be better</option><option value="1">★☆☆☆☆ · Disappointed</option></select></label><label class="field">Your review<textarea name="comment" required minlength="10" maxlength="1500" rows="4" placeholder="What did you like? What could be better?"></textarea></label><p id="review-error" class="error" role="alert"></p><button class="button blue">Publish review ↗</button><p class="subtle">One review per purchased product. Submitting again updates your previous review.</p></form>`;$('#review-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const data=Object.fromEntries(new FormData(form));const button=$('button',form);button.disabled=true;try{await api('/api/reviews',{productId:id,rating:Number(data.rating),comment:data.comment});closeDialog($('#info-dialog'));await refreshProducts();notify('Your review is published. Thank you.');}catch(err){$('#review-error').textContent=err.message;button.disabled=false;}};openDialog('#info-dialog');}
-api('/api/auth/me').then(result=>{acceptSession(result);}).catch(()=>resetAccountUI());
-

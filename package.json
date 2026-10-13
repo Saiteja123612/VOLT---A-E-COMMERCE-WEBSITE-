@@ -1,0 +1,19 @@
+{
+  "name": "volt-store",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VOLT electronics storefront with a Node.js backend and SQLite database",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check server.js && node --check marketplace.js && node --check public/app.js && node --check public/marketplace.js && node --check public/pages-preview.js && node --check scripts/build-pages.mjs && node --check operations.js && node --check public/operations.js",
+    "build:pages": "node scripts/build-pages.mjs",
+    "admin": "node scripts/admin.mjs",
+    "backup": "node scripts/backup.mjs"
+  }
+}
