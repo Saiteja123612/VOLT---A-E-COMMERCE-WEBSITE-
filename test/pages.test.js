@@ -1,6 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -42,4 +42,13 @@ test('preview cart calculates sample prices, coupon cap, quantities and shipping
 test('static preview never pretends to authenticate or accept orders',async()=>{
   assert.equal((await api('/api/auth/me')).user,null);
   for(const route of ['/api/auth/register','/api/auth/login','/api/orders','/api/seller/products','/api/orders/lookup'])await assert.rejects(api(route,{}),/browsing preview/);
+});
+test('export rejects unexpected private files and does not serve backend files',async()=>{
+  for(const path of ['server.js','.env','data/store.sqlite','scripts/admin.mjs','test/store.test.js'])assert.equal((await fetch(new URL(path,origin))).status,404,path);
+  const stray=join(folder,'.env');writeFileSync(stray,'EXAMPLE=test');
+  try{assert.throws(()=>buildPages(folder),/Unexpected deployment file/);}finally{unlinkSync(stray);}
+  const vercel=JSON.parse(readFileSync(new URL('../vercel.json',import.meta.url),'utf8'));
+  assert.equal(vercel.outputDirectory,'github-pages');
+  assert.match(vercel.buildCommand,/build:pages/);
+  assert.ok(vercel.headers[0].headers.some(h=>h.key==='Content-Security-Policy'&&h.value.includes("frame-ancestors 'none'")));
 });

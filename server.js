@@ -65,7 +65,9 @@ function rateLimit(req){const key=req.socket.remoteAddress;const now=Date.now();
 const server=http.createServer(async(req,res)=>{
   const json=(status,payload)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(payload));};
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');
-  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+  res.setHeader('X-Frame-Options','DENY');res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=(), payment=()');
+  if(publicOrigin?.startsWith('https://'))res.setHeader('Strict-Transport-Security','max-age=31536000');
+  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
   try {
     if(!(publicOrigin?req.headers.host===new URL(publicOrigin).host:/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host||'')))fail('Invalid host.',403);
     const url=new URL(req.url,'http://localhost');
@@ -117,6 +119,8 @@ const server=http.createServer(async(req,res)=>{
     const relative=url.pathname==='/'?'index.html':decodeURIComponent(url.pathname).replace(/^\/+/, '');
     const publicRoot=resolve(root,'public');const path=resolve(publicRoot,relative);
     if(!path.startsWith(publicRoot+'/')&&!path.startsWith(publicRoot+'\\'))return json(403,{error:'Forbidden'});
+    const browserFiles=new Set(['index.html','app.js','marketplace.js','operations.js','styles.css','marketplace.css','operations.css','fonts.css','pages-preview.js']);
+    if(!browserFiles.has(relative)&&!/^images\/[a-zA-Z0-9/_-]+\.(?:svg|png|jpg|jpeg|webp)$/.test(relative))return json(404,{error:'File not found.'});
     if(!existsSync(path))return json(404,{error:'File not found.'});
     const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.jpg':'image/jpeg','.png':'image/png','.webp':'image/webp'};
     const file=readFileSync(path);res.writeHead(200,{'Content-Type':types[extname(path)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(req.method==='HEAD'?undefined:file);

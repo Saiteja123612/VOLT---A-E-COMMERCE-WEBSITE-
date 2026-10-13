@@ -68,9 +68,14 @@ An optional Dockerfile is included. Supply PUBLIC_ORIGIN and mount durable stora
 ```powershell
 npm run backup
 npm run check
+npm run check:privacy
 npm test
 ```
 
 Backups are stored privately under `data/backups`. The SQLite snapshot uses VACUUM INTO and includes copied uploads. Pause uploads while backing up. To restore, stop the app and replace its data with the matching backup snapshot; do not mix a restored database with stale WAL/SHM files. Keep credentials, account data, and backups out of public repositories.
 
 Tests create temporary isolated stores. Test accounts in `test/browser-fixture.mjs` are synthetic and never seeded into the user's real database. The test fixture is excluded from the public deployment package.
+
+## Source and deployment privacy
+
+The source repository remains public; runtime account records and credentials are private and excluded. Read SECURITY.md before connecting a production database. The Vercel configuration intentionally publishes the browsing preview until the full backend is adapted for a durable hosted database. GitHub Pages uses a workflow that uploads only the generated preview, not the repository root.

@@ -1,31 +1,23 @@
-# Fix the GitHub Pages upload
+# Publishing the VOLT preview
 
-Your project URL is https://saiteja123612.github.io/VOLT---A-E-COMMERCE-WEBSITE-/.
-The old HTML used `/styles.css`, `/app.js`, and `/images/...`, which request files from the account's domain root instead of this repository. The corrected export uses relative paths and includes a static product catalog.
+GitHub Pages and Vercel publish the generated `github-pages/` directory only. The editable frontend is `public/`; the backend stays at the repository root.
 
-## Upload the ready-made version
+## Automatic publishing
 
-1. Extract `VOLT-GitHub-Pages.zip`.
-2. Open https://github.com/Saiteja123612/VOLT---A-E-COMMERCE-WEBSITE-.
-3. Choose **Add file → Upload files**.
-4. Drag all files and the **images** folder from inside the extracted folder into the repository root. Replace the existing files. Do not upload the ZIP itself or a parent folder.
-5. Commit the upload. In **Settings → Pages**, use **Deploy from a branch → main → / (root)**, if that is not already selected.
-6. Wait for the Pages deployment to finish, then open the site and press **Ctrl+F5** to refresh cached files.
+- GitHub Pages: `.github/workflows/pages.yml` checks source privacy, runs tests, builds the preview, and uploads only `github-pages/`. Repository Settings → Pages must use **GitHub Actions** as its source.
+- Vercel: `vercel.json` selects the build command and `github-pages` output. Keep the Vercel project's Root Directory at the repository root. The preview receives security headers.
+- A push to `main` triggers these deployments. Pull requests run checks without deploying Pages.
 
-The root must contain `index.html`, `styles.css`, `marketplace.css`, `fonts.css`, `app.js`, `marketplace.js`, `pages-preview.js`, `catalog.json`, and the `images` directory. Keep `.nojekyll` if your upload method includes hidden files; this site also works without it.
+Do not upload extra copies of the site into the root or into `VOLT-GitHub-Pages/`. Do not select the entire repository as a static publishing directory.
 
-## What works on GitHub Pages
+## What the preview supports
 
-The layout, real product photographs, product details, manufacturer links, category filters, search, sorting, favorites, bag quantities, sample price totals, and VOLT10 calculations work without a backend. The bag and favorites persist in each visitor's browser.
+Browsing, categories, real product photos, search, sorting, saved favorites, bag quantities, and sample price calculations work. The preview never collects signup passwords, delivery addresses, orders, or payment details. Login, admin, and selling require the full backend and a persistent database.
 
-GitHub Pages only hosts static files. It cannot run `server.js` or SQLite. This export clearly labels itself as a preview and does not accept passwords, delivery addresses, orders, or payments. Account, seller, and checkout buttons explain this limitation rather than showing broken forms. No client-side password database or fake authentication is included.
+The Node/SQLite app remains available locally through `Start-VOLT.cmd` at http://localhost:3001. Online account functionality still needs a compatible backend/database deployment.
 
-The full local marketplace is unchanged: run `npm start` from `D:\MYSELF\volt-store` and open http://localhost:3000. A public full-stack deployment requires a host capable of running the backend with durable storage. No paid service or hosting account has been created by this change.
+## Manual export for a separate static host
 
-## Rebuild after editing
+Run `npm run build:pages`. Upload only the contents of `github-pages/`. The generated folder is ignored by Git and rebuilt from source. `node scripts/preview-pages.mjs` serves it locally on port 3101 under the GitHub repository path.
 
-Run `npm run build:pages`. Upload the contents of the generated `github-pages` folder, not the full project directory. Run `node scripts/preview-pages.mjs` to test the export under the same repository subpath on port 3101.
-
-Only public frontend files and the seeded sample catalog are exported. Never upload `data`, SQLite files, account records, recovery keys, `.env`, or private seller uploads to a public repository.
-
-Reference: https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages
+The builder uses an explicit file allowlist, validates image assets, and refuses unexpected files in an existing output directory. If that check fails, inspect the named file before rebuilding; do not publish it blindly.

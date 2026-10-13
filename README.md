@@ -2,6 +2,12 @@
 
 A local electronics marketplace with customer accounts, an admin console, a seller studio, product photo uploads, order management, an original lightning logo, a responsive storefront, a Node.js HTTP backend, and persistent SQLite storage. No paid database, API keys, subscription, external CDN, or npm dependencies are required.
 
+## Repository layout and privacy
+
+Edit the storefront in `public/` and the backend in `server.js`, `marketplace.js`, and `operations.js`. Keep `scripts/`, `test/`, deployment configuration, and documentation. The generated `github-pages/` folder is rebuilt automatically; duplicate root storefront files and the old uploaded `VOLT-GitHub-Pages/` folder have been removed.
+
+Vercel and GitHub Pages publish only the generated browsing preview. See [GITHUB-PAGES.md](GITHUB-PAGES.md) for deployment configuration and [SECURITY.md](SECURITY.md) for the privacy boundary and remaining launch requirements. Never upload the local `data/` folder, `.env`, backups, or service credentials. Source remains public by choice.
+
 ## Run
 
 Requires Node.js 24 or newer (Node 26 is installed on this computer).
@@ -122,6 +128,7 @@ POST routes accept JSON. Order lookup intentionally uses POST so the private key
 
 ```powershell
 npm run check
+npm run check:privacy
 npm test
 ```
 
