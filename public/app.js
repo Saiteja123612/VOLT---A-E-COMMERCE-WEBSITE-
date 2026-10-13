@@ -66,6 +66,3 @@ if(isStaticPreview){info.privacy=['Your browser, your saved finds.','Your bag an
 $('#year').textContent=new Date().getFullYear();
 async function init(){try{products=(await api('/api/products')).products;cart=cart.filter(i=>products.some(p=>p.id===i.id));saveBag();renderProducts();}catch(error){$('#products').innerHTML='<div class="no-results"><h3>The store needs a moment.</h3><p id="load-error"></p><button class="button dark" id="retry-load">Try again ↗</button></div>';$('#load-error').textContent=error.message;$('#retry-load').onclick=init;}}
 init();
-
-
-
